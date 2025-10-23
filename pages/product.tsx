@@ -6,13 +6,17 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { useAuth } from '@clerk/nextjs';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 export default function Product() {
     const { getToken } = useAuth();
     const [idea, setIdea] = useState<string>('…loading');
     const [isGenerating, setIsGenerating] = useState<boolean>(true);
     const [progress, setProgress] = useState<number>(0);
+    const [isGeneratingPDF, setIsGeneratingPDF] = useState<boolean>(false);
     const contentRef = useRef<HTMLDivElement>(null);
+    const printableContentRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         let buffer = '';
@@ -66,6 +70,142 @@ export default function Product() {
             if (progressTimer) clearInterval(progressTimer);
         };
     }, []);
+
+    const downloadAsPDF = async () => {
+        if (!printableContentRef.current || idea === '…loading' || idea === 'Authentication required') {
+            return;
+        }
+
+        setIsGeneratingPDF(true);
+
+        try {
+            // Create a temporary container for PDF generation
+            const tempContainer = document.createElement('div');
+            tempContainer.style.position = 'absolute';
+            tempContainer.style.left = '-9999px';
+            tempContainer.style.top = '0';
+            tempContainer.style.width = '210mm'; // A4 width
+            tempContainer.style.padding = '20mm';
+            tempContainer.style.backgroundColor = 'white';
+            tempContainer.style.fontFamily = 'Arial, sans-serif';
+            tempContainer.style.fontSize = '12px';
+            tempContainer.style.lineHeight = '1.6';
+            tempContainer.style.color = '#333';
+
+            // Create PDF content with proper styling
+            tempContainer.innerHTML = `
+                <div style="margin-bottom: 30px; text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 20px;">
+                    <h1 style="color: #1e40af; font-size: 28px; margin: 0 0 10px 0; font-weight: bold;">AI-Generated Business Idea</h1>
+                    <p style="color: #6b7280; font-size: 14px; margin: 0;">Generated on ${new Date().toLocaleDateString()}</p>
+                </div>
+                <div class="pdf-content" style="line-height: 1.7;">
+                    ${printableContentRef.current.innerHTML}
+                </div>
+            `;
+
+            // Apply PDF-specific styles
+            const style = document.createElement('style');
+            style.textContent = `
+                .pdf-content h1 {
+                    color: #1e40af !important;
+                    font-size: 24px !important;
+                    font-weight: bold !important;
+                    margin: 20px 0 10px 0 !important;
+                    border-bottom: 2px solid #e0e7ff !important;
+                    padding-bottom: 8px !important;
+                }
+                .pdf-content h2 {
+                    color: #1d4ed8 !important;
+                    font-size: 20px !important;
+                    font-weight: 600 !important;
+                    margin: 18px 0 8px 0 !important;
+                }
+                .pdf-content h3 {
+                    color: #2563eb !important;
+                    font-size: 16px !important;
+                    font-weight: 600 !important;
+                    margin: 14px 0 6px 0 !important;
+                }
+                .pdf-content h4, .pdf-content h5, .pdf-content h6 {
+                    color: #3b82f6 !important;
+                    font-weight: 600 !important;
+                    margin: 12px 0 4px 0 !important;
+                }
+                .pdf-content p {
+                    margin: 8px 0 !important;
+                    text-align: justify !important;
+                }
+                .pdf-content ul, .pdf-content ol {
+                    margin: 10px 0 !important;
+                    padding-left: 20px !important;
+                }
+                .pdf-content li {
+                    margin: 4px 0 !important;
+                }
+                .pdf-content strong {
+                    font-weight: bold !important;
+                    color: #1f2937 !important;
+                }
+                .pdf-content em {
+                    font-style: italic !important;
+                    color: #6b7280 !important;
+                }
+            `;
+            tempContainer.appendChild(style);
+            document.body.appendChild(tempContainer);
+
+            // Generate canvas from the temp container
+            const canvas = await html2canvas(tempContainer, {
+                scale: 2,
+                useCORS: true,
+                allowTaint: true,
+                backgroundColor: '#ffffff',
+                width: tempContainer.scrollWidth,
+                height: tempContainer.scrollHeight,
+            });
+
+            // Remove temp container
+            document.body.removeChild(tempContainer);
+
+            // Create PDF
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const imgWidth = 210; // A4 width in mm
+            const pageHeight = 297; // A4 height in mm
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            let heightLeft = imgHeight;
+            let position = 0;
+
+            // Add first page
+            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, position, imgWidth, imgHeight);
+            heightLeft -= pageHeight;
+
+            // Add additional pages if needed
+            while (heightLeft >= 0) {
+                position = heightLeft - imgHeight;
+                pdf.addPage();
+                pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+            }
+
+            // Add metadata
+            pdf.setProperties({
+                title: 'AI-Generated Business Idea',
+                subject: 'Business Idea Generated by AI',
+                author: 'AI Business Idea Generator',
+                creator: 'AI Business Idea Generator',
+            });
+
+            // Download the PDF
+            const fileName = `business-idea-${new Date().toISOString().split('T')[0]}.pdf`;
+            pdf.save(fileName);
+
+        } catch (error) {
+            console.error('Error generating PDF:', error);
+            alert('Error generating PDF. Please try again.');
+        } finally {
+            setIsGeneratingPDF(false);
+        }
+    };
 
     return (
         <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
@@ -139,7 +279,10 @@ export default function Product() {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="markdown-content text-gray-700 dark:text-gray-300 animate-fade-in">
+                                <div
+                                    ref={printableContentRef}
+                                    className="markdown-content text-gray-700 dark:text-gray-300 animate-fade-in"
+                                >
                                     <ReactMarkdown
                                         remarkPlugins={[remarkGfm, remarkBreaks]}
                                     >
@@ -164,13 +307,23 @@ export default function Product() {
                                             <span className="text-sm font-medium">Copy to Clipboard</span>
                                         </button>
                                         <button
-                                            onClick={() => window.print()}
-                                            className="flex items-center space-x-2 text-gray-600 hover:text-gray-700 transition-colors duration-200"
+                                            onClick={downloadAsPDF}
+                                            disabled={isGeneratingPDF}
+                                            className="flex items-center space-x-2 text-green-600 hover:text-green-700 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                                            </svg>
-                                            <span className="text-sm font-medium">Print</span>
+                                            {isGeneratingPDF ? (
+                                                <>
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                                                    <span className="text-sm font-medium">Generating PDF...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                    </svg>
+                                                    <span className="text-sm font-medium">Download PDF</span>
+                                                </>
+                                            )}
                                         </button>
                                     </div>
                                     <div className="text-xs text-gray-500">
