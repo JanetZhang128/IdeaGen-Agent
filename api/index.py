@@ -19,7 +19,46 @@ def idea(creds: HTTPAuthorizationCredentials = Depends(clerk_guard)):
     # - Apply user-specific limits or customization
     
     client = OpenAI()
-    prompt = [{"role": "user", "content": "Reply with a new business idea for AI Agents, formatted with headings, sub-headings and bullet points"}]
+    prompt = [{"role": "user", "content": """Generate a comprehensive business idea for AI Agents. Format your response with clear structure using:
+
+# Main Business Idea Title
+
+## Business Overview
+- Brief description of the core concept
+- Target market and audience
+- Key value proposition
+
+## Market Opportunity
+- Market size and potential
+- Current problems this solves
+- Competitive landscape
+
+## Product/Service Details
+- Core features and functionality
+- Technology requirements
+- Unique selling points
+
+## Business Model
+- Revenue streams
+- Pricing strategy
+- Key partnerships
+
+## Implementation Strategy
+- Development phases
+- Required resources
+- Timeline and milestones
+
+## Financial Projections
+- Startup costs
+- Revenue projections
+- Break-even analysis
+
+## Risk Assessment
+- Potential challenges
+- Mitigation strategies
+- Success metrics
+
+Make it engaging, practical, and well-structured with clear headings and bullet points for easy scanning."""}]
     stream = client.chat.completions.create(model="gpt-5-nano", messages=prompt, stream=True)
 
     def event_stream():
